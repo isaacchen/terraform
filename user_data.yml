@@ -1,0 +1,40 @@
+#cloud-config
+runcmd:
+  - echo vm.max_map_count=262144 >> /etc/sysctl.d/99-sonarqube.conf
+  - echo fs.file-max=65536 >> /etc/sysctl.d/99-sonarqube.conf
+  - sysctl -p /etc/sysctl.d/99-sonarqube.conf
+  - echo 'sonarqube - nofile 65536' >> /etc/security/limits.d/99-sonarqube.conf
+  - echo 'sonarqube - nproc  2048' >> /etc/security/limits.d/99-sonarqube.conf
+  - chmod 644 /etc/security/limits.d/99-sonarqube.conf
+  - service rpcbind stop; chkconfig rpcbind off
+  - service sendmail stop; chkconfig sendmail off
+  - service nfslock stop; chkconfig nfslock off
+  - yum erase -y java-1.7.0
+  - yum --disableplugin=fastestmirror install -y java-1.8.0 xfsprogs
+  - parted /dev/xvdf mklabel gpt
+  - parted /dev/xvdf mkpart primary xfs 0% 100%
+  - mkfs -t xfs /dev/xvdf1
+  - mkdir /mnt/ebs1
+  - mount /dev/xvdf1 /mnt/ebs1
+  - echo '/dev/xvdf1 /mnt/ebs1 xfs defaults 0 2' >> /etc/fstab
+  - useradd sonar
+  - chown sonar:sonar /mnt/ebs1
+  - ln -s /mnt/ebs1/sonarqube /opt/sonarqube-7.0
+  - yum --disableplugin=fastestmirror install -y postgresql96-server
+  - mv /var/lib/pgsql96 /mnt/ebs1/pgsql96
+  - ln -s /mnt/ebs1/pgsql96 /var/lib/pgsql96
+  - service postgresql96 initdb
+  - service postgresql96 start
+  - wget -q -P /tmp https://sonarsource.bintray.com/Distribution/sonarqube/sonarqube-7.0.zip
+  - su - sonar -c 'cd /mnt/ebs1 && unzip /tmp/sonarqube-7.0.zip'
+  - ln -s /mnt/ebs1/sonarqube-7.0 /opt/sonarqube
+  - sed -i 's/#sonar.jdbc.username=/sonar.jdbc.username=sonarqube/' /opt/sonarqube/conf/sonar.properties
+  - sed -i 's/#sonar.jdbc.password=/sonar.jdbc.password=mypassword/' /opt/sonarqube/conf/sonar.properties
+  - sed -i 's/#sonar.web.context=/sonar.web.context=\/sonar/' /opt/sonarqube/conf/sonar.properties
+  - sed -i 's/#RUN_AS_USER=/RUN_AS_USER=sonar/' /opt/sonarqube/bin/linux-x86-64/sonar.sh
+  - sed -i 's|WRAPPER_CMD=.*$|WRAPPER_CMD="/opt/sonarqube/bin/linux-x86-64/wrapper"|' /opt/sonarqube/bin/linux-x86-64/sonar.sh
+  - sed -i 's|WRAPPER_CONF=.*$|WRAPPER_CONF="/opt/sonarqube/conf/wrapper.conf"|' /opt/sonarqube/bin/linux-x86-64/sonar.sh
+  - sed -i 's|PIDDIR=.*$|PIDDIR="/opt/sonarqube/logs"|' /opt/sonarqube/bin/linux-x86-64/sonar.sh
+  - ln -s /opt/sonarqube/bin/linux-x86-64/sonar.sh /etc/init.d/sonar
+  - chkconfig sonar on
+  - service sonar start
